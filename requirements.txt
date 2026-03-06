@@ -11,3 +11,6 @@ asyncpg
 
 # Caching
 async-lru
+
+# env
+python-dotenv
