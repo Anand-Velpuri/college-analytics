@@ -1,0 +1,13 @@
+# Web Framework & Server
+fastapi
+uvicorn
+
+# Data Manipulation
+pandas
+
+# Database ORM & Drivers
+sqlalchemy
+asyncpg
+
+# Caching
+async-lru
