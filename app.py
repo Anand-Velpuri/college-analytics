@@ -1,18 +1,18 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends, HTTPException, Security, status
 from fastapi.security.api_key import APIKeyHeader
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy import text
 import urllib.parse
-from async_lru import alru_cache
 from dotenv import load_dotenv
 import os
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Dict, Any
-import time
-import logging
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# --- CACHE IMPORTS ---
+from fastapi_cache import FastAPICache
+from fastapi_cache.backends.inmemory import InMemoryBackend
+from fastapi_cache.decorator import cache
 
 load_dotenv(override=True)
 
@@ -30,10 +30,21 @@ async def get_api_key(api_key: str = Security(api_key_header)):
         )
     return api_key
 
+# -----------------------------------------------------------------------------
+# APP INITIALIZATION & LIFESPAN (Starts the cache)
+# -----------------------------------------------------------------------------
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Starts the in-memory cache when Uvicorn boots up
+    FastAPICache.init(InMemoryBackend())
+    yield
+    # You could add cleanup logic here if needed on shutdown
+
 app = FastAPI(
-    title="University Analytics API (Async & Secured)", 
-    version="3.0", # Bumped version for the speed upgrade!
-    dependencies=[Depends(get_api_key)]
+    title="University Analytics API (Cached & Async)", 
+    version="4.0",
+    dependencies=[Depends(get_api_key)],
+    lifespan=lifespan
 )
 
 app.add_middleware(
@@ -69,33 +80,20 @@ engine = create_async_engine(
     }
 )
 
-
-
-async def fetch_records(query: str, params: dict = None) -> list:
-    start_time = time.time()
-    
+# Super-fast async query helper (Pandas is gone!)
+async def fetch_records(query: str, params: dict = None) -> List[Dict[str, Any]]:
+    """Executes SQL asynchronously and returns a list of dictionaries instantly."""
     async with engine.connect() as conn:
-        # Measure purely the database execution time
-        db_start = time.time()
         result = await conn.execute(text(query), params or {})
-        db_end = time.time()
-        
-        # Measure Python's dictionary mapping time
-        records = [dict(row._mapping) for row in result.fetchall()]
-        
-        total_time = time.time() - start_time
-        
-        logger.info(f"DB Query Time: {(db_end - db_start):.4f}s | Total Time: {total_time:.4f}s")
-        return records
+        return [dict(row._mapping) for row in result.fetchall()]
 
 # -----------------------------------------------------------------------------
 # 1. STUDENT DASHBOARD ENDPOINTS
 # -----------------------------------------------------------------------------
 
 @app.get("/api/analytics/student/{student_id}/attendance", tags=["Student"])
-@alru_cache(maxsize=128)
+@cache(expire=3600) # Cache for 1 Hour
 async def get_student_attendance(student_id: str):
-    # Let Postgres calculate the percentage natively
     query = """
         SELECT 
             a."subjectId", 
@@ -110,8 +108,8 @@ async def get_student_attendance(student_id: str):
     return await fetch_records(query, {"student_id": student_id})
 
 @app.get("/api/analytics/student/{student_id}/grades-trend", tags=["Student"])
+@cache(expire=86400) # Cache for 24 Hours
 async def get_student_grades_trend(student_id: str):
-    # Let Postgres do the GROUP BY and AVG()
     query = """
         SELECT "semesterId", ROUND(AVG(grade)::numeric, 2) as sgpa
         FROM academics_v2."Grade"
@@ -126,8 +124,8 @@ async def get_student_grades_trend(student_id: str):
 # -----------------------------------------------------------------------------
 
 @app.get("/api/analytics/faculty/{faculty_id}/course-stats", tags=["Faculty"])
+@cache(expire=3600) # Cache for 1 Hour
 async def get_faculty_course_stats(faculty_id: str):
-    # Postgres handles the grouping, counting, and averaging
     query = """
         SELECT 
             ba.branch, 
@@ -147,6 +145,7 @@ async def get_faculty_course_stats(faculty_id: str):
 # -----------------------------------------------------------------------------
 
 @app.get("/api/analytics/dean/campus-occupancy", tags=["Dean"])
+@cache(expire=300) # Cache for 5 Minutes
 async def get_campus_occupancy():
     query = """
         SELECT 
@@ -159,7 +158,7 @@ async def get_campus_occupancy():
     return records[0] if records else {"Inside Campus": 0, "Outside Campus": 0}
 
 @app.get("/api/analytics/dean/academic-heatmap", tags=["Dean"])
-@alru_cache(maxsize=32)
+@cache(expire=43200) # Cache for 12 Hours
 async def get_academic_heatmap():
     query = """
         SELECT 
@@ -174,14 +173,13 @@ async def get_academic_heatmap():
     return await fetch_records(query)
 
 @app.get("/api/analytics/dean/grievance-trends", tags=["Dean"])
+@cache(expire=3600) # Cache for 1 Hour
 async def get_grievance_trends():
     query = """
         SELECT category, status, COUNT(*) as count 
         FROM cron_v2."Grievance" 
         GROUP BY category, status
     """
-    # Grouping by category and status in DB. 
-    # If the frontend needs a strict crosstab format, it's trivial to format this list of dicts.
     return await fetch_records(query)
 
 # -----------------------------------------------------------------------------
@@ -189,8 +187,8 @@ async def get_grievance_trends():
 # -----------------------------------------------------------------------------
 
 @app.get("/api/analytics/webmaster/upload-health", tags=["Webmaster"])
+@cache(expire=300) # Cache for 5 Minutes
 async def get_upload_health():
-    # Postgres extracts the date and does the math
     query = """
         SELECT 
             DATE("createdAt") as date, 
@@ -202,13 +200,13 @@ async def get_upload_health():
         GROUP BY DATE("createdAt"), type
         ORDER BY date DESC
     """
-    # Convert date objects to strings for JSON serialization
     records = await fetch_records(query)
     for r in records:
         r['date'] = str(r['date'])
     return records
 
 @app.get("/api/analytics/webmaster/system-users", tags=["Webmaster"])
+@cache(expire=3600) # Cache for 1 Hour
 async def get_system_user_distribution():
     query = """
         SELECT 
