@@ -162,13 +162,15 @@ async def get_campus_occupancy():
 async def get_academic_heatmap():
     query = """
         SELECT 
+            g."semesterId",
             s.branch, 
             sub.name AS subject_name,
             ROUND(AVG(g.grade)::numeric, 2) as average_grade
         FROM academics_v2."Grade" g
         JOIN user_v2."StudentProfile" s ON g."studentId" = s.id
         JOIN academics_v2."Subject" sub ON g."subjectId" = sub.id
-        GROUP BY s.branch, sub.name
+        GROUP BY g."semesterId", s.branch, sub.name
+        ORDER BY g."semesterId", s.branch, sub.name
     """
     return await fetch_records(query)
 
