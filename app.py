@@ -8,6 +8,11 @@ from dotenv import load_dotenv
 import os
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Dict, Any
+import time
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 load_dotenv(override=True)
 
@@ -64,13 +69,24 @@ engine = create_async_engine(
     }
 )
 
-# Super-fast async query helper (Pandas is gone!)
-async def fetch_records(query: str, params: dict = None) -> List[Dict[str, Any]]:
-    """Executes SQL asynchronously and returns a list of dictionaries instantly."""
+
+
+async def fetch_records(query: str, params: dict = None) -> list:
+    start_time = time.time()
+    
     async with engine.connect() as conn:
+        # Measure purely the database execution time
+        db_start = time.time()
         result = await conn.execute(text(query), params or {})
-        # ._mapping converts SQLAlchemy rows directly to Python dicts. Lightning fast.
-        return [dict(row._mapping) for row in result.fetchall()]
+        db_end = time.time()
+        
+        # Measure Python's dictionary mapping time
+        records = [dict(row._mapping) for row in result.fetchall()]
+        
+        total_time = time.time() - start_time
+        
+        logger.info(f"DB Query Time: {(db_end - db_start):.4f}s | Total Time: {total_time:.4f}s")
+        return records
 
 # -----------------------------------------------------------------------------
 # 1. STUDENT DASHBOARD ENDPOINTS
