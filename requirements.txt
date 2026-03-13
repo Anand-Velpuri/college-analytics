@@ -14,3 +14,5 @@ async-lru
 
 # env
 python-dotenv
+
+fastapi-cache2
