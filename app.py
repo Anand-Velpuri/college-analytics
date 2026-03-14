@@ -80,7 +80,7 @@ engine = create_async_engine(
     }
 )
 
-# Super-fast async query helper (Pandas is gone!)
+# Super-fast async query helper
 async def fetch_records(query: str, params: dict = None) -> List[Dict[str, Any]]:
     """Executes SQL asynchronously and returns a list of dictionaries instantly."""
     async with engine.connect() as conn:
@@ -101,8 +101,8 @@ async def get_student_attendance(student_id: str):
             a."totalClasses", 
             a."attendedClasses",
             ROUND((a."attendedClasses"::numeric / NULLIF(a."totalClasses", 0)) * 100, 1) as attendance_percentage
-        FROM academics_v2."Attendance" a
-        JOIN academics_v2."Subject" s ON a."subjectId" = s.id
+        FROM uniz_academics."Attendance" a
+        JOIN uniz_academics."Subject" s ON a."subjectId" = s.id
         WHERE a."studentId" = :student_id
     """
     return await fetch_records(query, {"student_id": student_id})
@@ -112,7 +112,7 @@ async def get_student_attendance(student_id: str):
 async def get_student_grades_trend(student_id: str):
     query = """
         SELECT "semesterId", ROUND(AVG(grade)::numeric, 2) as sgpa
-        FROM academics_v2."Grade"
+        FROM uniz_academics."Grade"
         WHERE "studentId" = :student_id
         GROUP BY "semesterId"
         ORDER BY "semesterId"
@@ -132,9 +132,9 @@ async def get_faculty_course_stats(faculty_id: str):
             sub.name as subject_name, 
             ROUND(AVG(g.grade)::numeric, 2) as average_grade,
             COUNT(g.grade) as total_students
-        FROM academics_v2."BranchAllocation" ba
-        JOIN academics_v2."Subject" sub ON ba."subjectId" = sub.id
-        JOIN academics_v2."Grade" g ON sub.id = g."subjectId"
+        FROM uniz_academics."BranchAllocation" ba
+        JOIN uniz_academics."Subject" sub ON ba."subjectId" = sub.id
+        JOIN uniz_academics."Grade" g ON sub.id = g."subjectId"
         WHERE ba."facultyId" = :faculty_id AND ba."isApproved" = true
         GROUP BY ba.branch, sub.name
     """
@@ -151,7 +151,7 @@ async def get_campus_occupancy():
         SELECT 
             COUNT(CASE WHEN "isPresentInCampus" = true THEN 1 END) as "Inside Campus",
             COUNT(CASE WHEN "isPresentInCampus" = false THEN 1 END) as "Outside Campus"
-        FROM user_v2."StudentProfile"
+        FROM uniz_user."StudentProfile"
         WHERE "isSuspended" = false
     """
     records = await fetch_records(query)
@@ -166,9 +166,9 @@ async def get_academic_heatmap():
             s.branch, 
             sub.name AS subject_name,
             ROUND(AVG(g.grade)::numeric, 2) as average_grade
-        FROM academics_v2."Grade" g
-        JOIN user_v2."StudentProfile" s ON g."studentId" = s.id
-        JOIN academics_v2."Subject" sub ON g."subjectId" = sub.id
+        FROM uniz_academics."Grade" g
+        JOIN uniz_user."StudentProfile" s ON g."studentId" = s.id
+        JOIN uniz_academics."Subject" sub ON g."subjectId" = sub.id
         GROUP BY g."semesterId", s.branch, sub.name
         ORDER BY g."semesterId", s.branch, sub.name
     """
@@ -179,7 +179,7 @@ async def get_academic_heatmap():
 async def get_grievance_trends():
     query = """
         SELECT category, status, COUNT(*) as count 
-        FROM cron_v2."Grievance" 
+        FROM uniz_cron."Grievance" 
         GROUP BY category, status
     """
     return await fetch_records(query)
@@ -198,7 +198,7 @@ async def get_upload_health():
             SUM("successCount") as successCount, 
             SUM("failCount") as failCount,
             ROUND((SUM("successCount")::numeric / NULLIF(SUM("successCount") + SUM("failCount"), 0)) * 100, 1) as success_rate_percent
-        FROM user_v2."UploadHistory"
+        FROM uniz_user."UploadHistory"
         GROUP BY DATE("createdAt"), type
         ORDER BY date DESC
     """
@@ -215,7 +215,7 @@ async def get_system_user_distribution():
             role,
             COUNT(CASE WHEN "isDisabled" = false THEN 1 END) as "Active",
             COUNT(CASE WHEN "isDisabled" = true THEN 1 END) as "Disabled"
-        FROM auth_v2."AuthCredential"
+        FROM uniz_auth."AuthCredential"
         GROUP BY role
     """
     return await fetch_records(query)
