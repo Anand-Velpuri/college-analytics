@@ -167,8 +167,9 @@ async def get_academic_heatmap():
             sub.name AS subject_name,
             ROUND(AVG(g.grade)::numeric, 2) as average_grade
         FROM uniz_academics."Grade" g
-        JOIN uniz_user."StudentProfile" s ON g."studentId" = s.id
-        JOIN uniz_academics."Subject" sub ON g."subjectId" = sub.id
+        -- CAST BOTH IDs TO TEXT SO POSTGRESQL CAN COMPARE THEM
+        JOIN uniz_user."StudentProfile" s ON g."studentId"::text = s.id::text
+        JOIN uniz_academics."Subject" sub ON g."subjectId"::text = sub.id::text
         GROUP BY g."semesterId", s.branch, sub.name
         ORDER BY g."semesterId", s.branch, sub.name
     """
